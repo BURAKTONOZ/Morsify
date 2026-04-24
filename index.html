@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Premium Morse Interface</title>
+    <style>
+        /* Modern ve Teknik Fontlar */
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Space+Mono:wght@700&display=swap');
+
+        :root {
+            --bg-base: #0a0b10;
+            --surface: #12151e;
+            --surface-light: #1c212e;
+            --grid-color: rgba(255, 255, 255, 0.02);
+            --path-idle: #1f2533;
+            --text-muted: #57647c;
+            
+            /* Neon Renkler */
+            --neon-blue: #00e5ff;
+            --neon-red: #ff0055;
+            --neon-white: #ffffff;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            height: 100%;
+            width: 100%;
+            background-color: var(--bg-base);
+            /* Arka plan teknik ızgara deseni */
+            background-image: 
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 30px 30px;
+            background-position: center center;
+            color: var(--text-muted);
+            font-family: 'Rajdhani', sans-serif;
+            overflow: hidden; 
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- OLED GÖSTERGE EKRANI --- */
+        #display-wrapper {
+            flex: 0 0 16vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(180deg, rgba(10,11,16,0.9) 0%, rgba(10,11,16,0) 100%);
+            z-index: 10;
+        }
+
+        #screen-bezel {
+            width: 100%;
+            max-width: 600px;
+            background: #050608;
+            border-radius: 16px;
+            padding: 4px;
+            /* Ekran çerçevesi 3D efekti */
+            box-shadow: 
+                0 20px 40px rgba(0,0,0,0.8),
+                inset 0 2px 4px rgba(255,255,255,0.1),
+                inset 0 -2px 4px rgba(0,0,0,0.5),
+                0 0 0 1px #1a1e29;
+            position: relative;
+        }
+
+        #screen {
+            background: #020203;
+            border-radius: 12px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            /* İç gölge ile derinlik */
+            box-shadow: inset 0 5px 15px rgba(0,0,0,1);
+        }
+
+        /* Ekranda hafif tarama çizgisi efekti (Scanline) */
+        #screen::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+        }
+
+        #text-output {
+            font-family: 'Space Mono', monospace;
+            font-size: 2.2rem;
+            color: var(--neon-blue);
+            letter-spacing: 6px;
+            text-shadow: 0 0 8px rgba(0, 229, 255, 0.6), 0 0 20px rgba(0, 229, 255, 0.3);
+            z-index: 2;
+            word-wrap: break-word;
+            text-align: center;
+            padding: 0 15px;
+        }
+
+        #current-signal-hint {
+            position: absolute;
+            bottom: 6px;
+            right: 12px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--neon-white);
+            opacity: 0.7;
+            text-shadow: 0 0 5px rgba(255,255,255,0.5);
+            z-index: 2;
+        }
+
+        /* --- ORTA SVG DEVRE ALANI --- */
+        #circuit-board {
+            flex: 1;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            max-width: 650px;
+        }
+
+        .path-line {
+            fill: none;
+            stroke: var(--path-idle);
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: stroke 0.15s ease-out, filter 0.15s ease-out;
+        }
+
+        .node-shape {
+            fill: var(--surface);
+            stroke: var(--path-idle);
+            stroke-width: 3;
+            transition: all 0.15s ease-out;
+        }
+
+        .node-text {
+            fill: var(--text-muted);
+            font-size: 26px;
+            font-weight: 700;
+            text-anchor: middle;
+            dominant-baseline: central;
+            transition: all 0.15s ease-out;
+        }
+
+        /* Aktif Işıklandırmalar (GLOW EFEKTLERİ) */
+        .path-line.active {
+            stroke: rgba(255, 255, 255, 0.8);
+            stroke-width: 5;
+            filter: drop-shadow(0 0 6px rgba(255,255,255,0.8));
+        }
+
+        /* Nokta (Kısa) Işıkları - Mavi/Siyan */
+        .node-shape.active-dot {
+            fill: var(--neon-blue);
+            stroke: #fff;
+            filter: drop-shadow(0 0 12px var(--neon-blue)) drop-shadow(0 0 25px var(--neon-blue));
+        }
+        .path-line.active-dot {
+            stroke: var(--neon-blue);
+            filter: drop-shadow(0 0 8px var(--neon-blue));
+        }
+
+        /* Çizgi (Uzun) Işıkları - Kırmızı/Pembe */
+        .node-shape.active-dash {
+            fill: var(--neon-red);
+            stroke: #fff;
+            filter: drop-shadow(0 0 12px var(--neon-red)) drop-shadow(0 0 25px var(--neon-red));
+        }
+        .path-line.active-dash {
+            stroke: var(--neon-red);
+            filter: drop-shadow(0 0 8px var(--neon-red));
+        }
+
+        .node-text.active {
+            fill: #fff;
+            text-shadow: 0 0 10px rgba(255,255,255,0.8);
+        }
+
+        /* --- ALT KONTROL PANELİ & 3D BUTONLAR --- */
+        #control-panel {
+            flex: 0 0 22vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            padding: 20px 30px 40px 30px;
+            background: linear-gradient(0deg, #07080b 0%, rgba(10,11,16,0) 100%);
+            z-index: 10;
+        }
+
+        .btn-wrapper {
+            position: relative;
+            height: 100%;
+            border-radius: 24px;
+        }
+
+        .control-btn {
+            height: 100%;
+            border-radius: 20px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 700;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            outline: none;
+            border: none;
+            -webkit-tap-highlight-color: transparent;
+            transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            z-index: 2;
+        }
+
+        .control-btn span {
+            font-size: 0.85rem;
+            font-family: 'Space Mono', monospace;
+            opacity: 0.6;
+            margin-top: 4px;
+            font-weight: normal;
+        }
+
+        /* Sinyal Butonu - Premium Neumorphism */
+        #wrapper-morse {
+            flex: 2;
+            max-width: 400px;
+            /* Buton dış yuvası (çukur) efekti */
+            background: #0a0b10;
+            box-shadow: 
+                inset 5px 5px 10px rgba(0,0,0,0.8),
+                inset -5px -5px 10px rgba(255,255,255,0.02);
+            padding: 6px;
+        }
+
+        #morse-btn {
+            width: 100%;
+            background: linear-gradient(145deg, #171b26, #11141c);
+            color: #fff;
+            /* Çıkıntılı fiziksel buton gölgeleri */
+            box-shadow: 
+                8px 8px 16px rgba(0,0,0,0.6), 
+                -4px -4px 12px rgba(255,255,255,0.03),
+                inset 0 2px 2px rgba(255,255,255,0.05),
+                inset 0 -2px 4px rgba(0,0,0,0.4);
+            border: 1px solid #1f2533;
+        }
+
+        #morse-btn.pressed {
+            /* Basıldığında içe çökme ve parlayan kenar */
+            transform: scale(0.97);
+            background: linear-gradient(145deg, #11141c, #171b26);
+            box-shadow: 
+                inset 6px 6px 12px rgba(0,0,0,0.8),
+                inset -2px -2px 8px rgba(255,255,255,0.02);
+            border-color: var(--neon-blue);
+            color: var(--neon-blue);
+        }
+        #morse-btn.pressed span { color: var(--neon-blue); opacity: 1; }
+
+        /* Temizle Butonu */
+        #wrapper-clear {
+            flex: 1;
+            max-width: 140px;
+            background: #0a0b10;
+            box-shadow: 
+                inset 5px 5px 10px rgba(0,0,0,0.8),
+                inset -5px -5px 10px rgba(255,255,255,0.02);
+            padding: 6px;
+        }
+
+        #clear-btn {
+            width: 100%;
+            background: linear-gradient(145deg, #1a1012, #120a0b);
+            color: var(--neon-red);
+            box-shadow: 
+                8px 8px 16px rgba(0,0,0,0.6), 
+                -4px -4px 12px rgba(255,255,255,0.02),
+                inset 0 2px 2px rgba(255,255,255,0.05);
+            border: 1px solid #33151b;
+        }
+
+        #clear-btn:active {
+            transform: scale(0.95);
+            box-shadow: inset 4px 4px 10px rgba(0,0,0,0.8);
+            background: #120a0b;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="display-wrapper">
+        <div id="screen-bezel">
+            <div id="screen">
+                <div id="text-output"></div>
+                <div id="current-signal-hint">_</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="circuit-board">
+        <svg id="svg-board" viewBox="0 0 1000 650" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+
+    <div id="control-panel">
+        <div class="btn-wrapper" id="wrapper-morse">
+            <button id="morse-btn" class="control-btn">
+                SİNYAL
+                <span>BASILI TUT</span>
+            </button>
+        </div>
+        <div class="btn-wrapper" id="wrapper-clear">
+            <button id="clear-btn" class="control-btn">SİL</button>
+        </div>
+    </div>
+
+<script>
+    // --- 1. AĞAÇ VERİSİ VE KOORDİNATLAR ---
+    const treeData = [
+        { char: 'START', sig: '',   x: 500, y: 30,  type: 'start', p: null },
+        { char: 'T', sig: '-',      x: 250, y: 130, p: '', type: 'dash' },
+        { char: 'E', sig: '.',      x: 750, y: 130, p: '', type: 'dot' },
+        { char: 'M', sig: '--',     x: 150, y: 240, p: '-', type: 'dash' },
+        { char: 'N', sig: '-.',     x: 350, y: 240, p: '-', type: 'dot' },
+        { char: 'A', sig: '.-',     x: 650, y: 240, p: '.', type: 'dash' },
+        { char: 'I', sig: '..',     x: 850, y: 240, p: '.', type: 'dot' },
+        { char: 'O', sig: '---',    x: 80,  y: 350, p: '--', type: 'dash' },
+        { char: 'G', sig: '--.',    x: 220, y: 350, p: '--', type: 'dot' },
+        { char: 'K', sig: '-.-',    x: 300, y: 350, p: '-.', type: 'dash' },
+        { char: 'D', sig: '-..',    x: 420, y: 350, p: '-.', type: 'dot' },
+        { char: 'W', sig: '.--',    x: 580, y: 350, p: '.-', type: 'dash' },
+        { char: 'R', sig: '.-.',    x: 700, y: 350, p: '.-', type: 'dot' },
+        { char: 'U', sig: '..-',    x: 780, y: 350, p: '..', type: 'dash' },
+        { char: 'S', sig: '...',    x: 920, y: 350, p: '..', type: 'dot' },
+        { char: 'Q', sig: '--.-',   x: 180, y: 470, p: '--.', type: 'dash' },
+        { char: 'Z', sig: '--..',   x: 260, y: 470, p: '--.', type: 'dot' },
+        { char: 'Y', sig: '-.--',   x: 260, y: 580, p: '-.-', type: 'dash' }, 
+        { char: 'C', sig: '-.-.',   x: 340, y: 470, p: '-.-', type: 'dot' },
+        { char: 'X', sig: '-..-',   x: 400, y: 470, p: '-..', type: 'dash' },
+        { char: 'B', sig: '-...',   x: 480, y: 470, p: '-..', type: 'dot' },
+        { char: 'J', sig: '.---',   x: 520, y: 470, p: '.--', type: 'dash' },
+        { char: 'P', sig: '.--.',   x: 600, y: 470, p: '.--', type: 'dot' },
+        { char: 'L', sig: '.-..',   x: 740, y: 470, p: '.-.', type: 'dot' },
+        { char: 'F', sig: '..-.',   x: 820, y: 470, p: '..-', type: 'dot' },
+        { char: 'V', sig: '...-',   x: 880, y: 470, p: '...', type: 'dash' },
+        { char: 'H', sig: '....',   x: 960, y: 470, p: '...', type: 'dot' }
+    ];
+
+    const dict = treeData.reduce((acc, curr) => { if(curr.sig) acc[curr.sig] = curr.char; return acc; }, {});
+
+    // --- 2. SVG DEVRESİNİ ÇİZME ---
+    const svgBoard = document.getElementById('svg-board');
+    
+    function drawCircuit() {
+        let pathsHTML = '';
+        let nodesHTML = '';
+
+        treeData.forEach(node => {
+            if (node.p !== null) {
+                const parent = treeData.find(n => n.sig === node.p);
+                if (parent) {
+                    const midY = (parent.y + node.y) / 2;
+                    const pathD = `M ${parent.x} ${parent.y + 20} L ${parent.x} ${midY} L ${node.x} ${midY} L ${node.x} ${node.y - 20}`;
+                    pathsHTML += `<path class="path-line" id="path-${node.sig}" d="${pathD}" />`;
+                }
+            }
+
+            if (node.type === 'start') {
+                nodesHTML += `<circle cx="${node.x}" cy="${node.y}" r="14" class="node-shape" id="node-" />
+                              <circle cx="${node.x}" cy="${node.y}" r="6" fill="#1f2533" />
+                              <text x="${node.x}" y="${node.y - 25}" class="node-text" style="font-size:16px;">GND</text>`;
+            } else {
+                if (node.type === 'dot') {
+                    // Yuvarlak içi dolu nokta tasarımı
+                    nodesHTML += `<circle cx="${node.x}" cy="${node.y}" r="22" class="node-shape" id="node-${node.sig}" />
+                                  <circle cx="${node.x}" cy="${node.y}" r="10" fill="rgba(0,0,0,0.3)" pointer-events="none"/>`;
+                } else {
+                    // Kare/Dikdörtgen tasarım
+                    nodesHTML += `<rect x="${node.x - 22}" y="${node.y - 18}" width="44" height="36" rx="8" class="node-shape" id="node-${node.sig}" />
+                                  <rect x="${node.x - 12}" y="${node.y - 6}" width="24" height="12" rx="4" fill="rgba(0,0,0,0.3)" pointer-events="none"/>`;
+                }
+                const textY = node.y + 38; 
+                nodesHTML += `<text x="${node.x}" y="${textY}" class="node-text" id="text-${node.sig}">${node.char}</text>`;
+            }
+        });
+
+        svgBoard.innerHTML = pathsHTML + nodesHTML;
+    }
+    drawCircuit();
+
+    // --- 3. SES (BEEP) SİSTEMİ ---
+    let audioCtx;
+    let oscillator;
+    let gainNode;
+
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            gainNode = audioCtx.createGain();
+            gainNode.connect(audioCtx.destination);
+            gainNode.gain.value = 0;
+        }
+    }
+
+    function startSound() {
+        initAudio();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        oscillator = audioCtx.createOscillator();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(650, audioCtx.currentTime); // Biraz daha tok ve modern bir frekans
+        oscillator.connect(gainNode);
+        oscillator.start();
+        gainNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
+    }
+
+    function stopSound() {
+        if (gainNode) {
+            gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.015);
+            const oscToStop = oscillator;
+            setTimeout(() => { if(oscToStop) { oscToStop.stop(); oscToStop.disconnect(); } }, 50);
+        }
+    }
+
+    // --- 4. MANTIK VE ETKİLEŞİM ---
+    const btn = document.getElementById('morse-btn');
+    const clearBtn = document.getElementById('clear-btn');
+    const display = document.getElementById('text-output');
+    const hint = document.getElementById('current-signal-hint');
+    
+    let currentSignal = '';
+    let pressStartTime = 0;
+    let evalTimer;
+    let spaceTimer;
+    let isPressed = false;
+
+    const THRESHOLD = 220; // Kısa/Uzun algılama toleransı
+    const LETTER_TIMEOUT = 800;
+    const SPACE_TIMEOUT = 2500;
+
+    function pressDown(e) {
+        if(e.type === 'touchstart') e.preventDefault();
+        if(isPressed) return;
+        isPressed = true;
+        
+        clearTimeout(evalTimer);
+        clearTimeout(spaceTimer);
+        
+        pressStartTime = Date.now();
+        btn.classList.add('pressed');
+        
+        startSound();
+        if (navigator.vibrate) navigator.vibrate(15);
+    }
+
+    function pressUp(e) {
+        if(e.type === 'touchend') e.preventDefault();
+        if(!isPressed) return;
+        isPressed = false;
+        
+        const duration = Date.now() - pressStartTime;
+        btn.classList.remove('pressed');
+        
+        stopSound();
+
+        const isDot = duration < THRESHOLD;
+        currentSignal += isDot ? '.' : '-';
+        updateVisuals(isDot);
+
+        evalTimer = setTimeout(() => {
+            commitLetter();
+        }, LETTER_TIMEOUT);
+    }
+
+    function updateVisuals(lastSignalIsDot) {
+        // Eski aktif classları temizle
+        document.querySelectorAll('.active, .active-dot, .active-dash').forEach(el => {
+            el.classList.remove('active', 'active-dot', 'active-dash');
+        });
+
+        let pathStr = '';
+        for (let i = 0; i < currentSignal.length; i++) {
+            pathStr += currentSignal[i];
+            const isCurrentDot = currentSignal[i] === '.';
+            
+            const line = document.getElementById('path-' + pathStr);
+            const node = document.getElementById('node-' + pathStr);
+            const text = document.getElementById('text-' + pathStr);
+
+            if (line) {
+                line.classList.add('active');
+                // Yolun rengini de sonuca göre değiştir
+                if (i === currentSignal.length - 1) {
+                    line.classList.add(isCurrentDot ? 'active-dot' : 'active-dash');
+                }
+            }
+            if (text) text.classList.add('active');
+            
+            if (node) {
+                if (i === currentSignal.length - 1) {
+                    // Son ulaşılan düğüm tam yanar
+                    node.classList.add(isCurrentDot ? 'active-dot' : 'active-dash');
+                } else {
+                    // Geçilen ara düğümler beyaz parlar
+                    node.style.fill = '#ffffff';
+                    node.style.filter = 'drop-shadow(0 0 10px #ffffff)';
+                    setTimeout(() => {
+                        node.style.fill = '';
+                        node.style.filter = '';
+                    }, LETTER_TIMEOUT);
+                }
+            }
+        }
+
+        hint.innerText = currentSignal + " " + (dict[currentSignal] ? `[${dict[currentSignal]}]` : '');
+    }
+
+    function commitLetter() {
+        if (dict[currentSignal]) {
+            display.innerText += dict[currentSignal];
+        }
+        
+        currentSignal = '';
+        updateVisuals(true);
+        hint.innerText = '_';
+
+        spaceTimer = setTimeout(() => {
+            if (display.innerText.length > 0 && !display.innerText.endsWith(' ')) {
+                display.innerText += ' ';
+            }
+        }, SPACE_TIMEOUT);
+    }
+
+    function clearDisplay() {
+        display.innerText = '';
+        currentSignal = '';
+        hint.innerText = '_';
+        clearTimeout(evalTimer);
+        clearTimeout(spaceTimer);
+        updateVisuals(true); 
+        if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    }
+
+    // Olay Dinleyicileri
+    btn.addEventListener('touchstart', pressDown, {passive: false});
+    btn.addEventListener('touchend', pressUp, {passive: false});
+    btn.addEventListener('mousedown', pressDown);
+    window.addEventListener('mouseup', pressUp); 
+    
+    clearBtn.addEventListener('click', clearDisplay);
+    clearBtn.addEventListener('touchstart', (e) => { e.preventDefault(); clearDisplay(); }, {passive: false});
+
+</script>
+</body>
+</html>
